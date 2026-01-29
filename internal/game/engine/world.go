@@ -17,11 +17,13 @@ type Player struct {
 type World struct {
 	mu      sync.RWMutex
 	players map[string]*Player
+	mapData [][]int
 }
 
 func NewWorld() *World {
 	return &World{
 		players: make(map[string]*Player),
+		mapData: buildMapData(mapWidth, mapHeight),
 	}
 }
 
@@ -29,8 +31,8 @@ func (w *World) AddPlayer(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	spawnX := 800 * positionScale
-	spawnY := 800 * positionScale
+	spawnX := w.tileCenter(mapWidth / 2)
+	spawnY := w.tileCenter(mapHeight / 2)
 
 	w.players[id] = &Player{
 		ID:        id,
@@ -49,18 +51,30 @@ func (w *World) RemovePlayer(id string) {
 	delete(w.players, id)
 }
 
-func (w *World) SetPlayerTarget(id string, x, y int) {
+func (w *World) SetPlayerTarget(id string, x, y int) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	player, ok := w.players[id]
 	if !ok {
-		return
+		return false
 	}
 
-	player.TargetX = x
-	player.TargetY = y
-	player.HasTarget = true
+	targetTileX, targetTileY := w.toTileCoords(x, y)
+	if !w.isWalkable(targetTileX, targetTileY) {
+		return false
+	}
+
+	currentTileX, currentTileY := w.toTileCoords(player.X, player.Y)
+	if absInt(targetTileX-currentTileX)+absInt(targetTileY-currentTileY) > 1 {
+		return false
+	}
+
+	player.TargetX = w.tileCenter(targetTileX)
+	player.TargetY = w.tileCenter(targetTileY)
+	player.HasTarget = !(player.TargetX == player.X && player.TargetY == player.Y)
+
+	return true
 }
 
 func (w *World) SnapshotPlayers() []Player {
@@ -114,3 +128,54 @@ func (w *World) Step(deltaSeconds float64) {
 }
 
 const positionScale = 100
+const tileSize = 32
+const mapWidth = 50
+const mapHeight = 50
+const tileWorldSize = tileSize * positionScale
+
+func (w *World) toTileCoords(x, y int) (int, int) {
+	return x / tileWorldSize, y / tileWorldSize
+}
+
+func (w *World) tileCenter(tile int) int {
+	return tile*tileWorldSize + tileWorldSize/2
+}
+
+func (w *World) isWalkable(x, y int) bool {
+	if x < 0 || y < 0 || x >= mapWidth || y >= mapHeight {
+		return false
+	}
+
+	return w.mapData[y][x] != 2
+}
+
+func buildMapData(width, height int) [][]int {
+	data := make([][]int, 0, height)
+
+	for y := 0; y < height; y += 1 {
+		row := make([]int, 0, width)
+		for x := 0; x < width; x += 1 {
+			isBorder := x == 0 || y == 0 || x == width-1 || y == height-1
+			tileIndex := 0
+
+			if isBorder {
+				tileIndex = 2
+			} else if (x+y)%7 == 0 {
+				tileIndex = 1
+			}
+
+			row = append(row, tileIndex)
+		}
+		data = append(data, row)
+	}
+
+	return data
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+
+	return value
+}
