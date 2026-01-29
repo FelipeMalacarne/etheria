@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	writeTimeout = 5 * time.Second
-	sendBuffer   = 16
-	chunkSizeTiles      = 8
-	chunkRadius         = 1
+	writeTimeout   = 5 * time.Second
+	sendBuffer     = 16
+	chunkSizeTiles = 8
+	chunkRadius    = 1
 )
 
 var upgrader = websocket.Upgrader{
@@ -31,10 +31,10 @@ var upgrader = websocket.Upgrader{
 }
 
 type Server struct {
-	world   *engine.World
-	clients map[*client]struct{}
-	nextID  uint64
-	mu      sync.RWMutex
+	world    *engine.World
+	clients  map[*client]struct{}
+	nextID   uint64
+	mu       sync.RWMutex
 	lastTick int64
 }
 
@@ -43,8 +43,8 @@ type client struct {
 	conn      *websocket.Conn
 	send      chan packets.Packet
 	closeOnce sync.Once
-	mu       sync.Mutex
-	lastSent map[string]packets.PlayerState
+	mu        sync.Mutex
+	lastSent  map[string]packets.PlayerState
 }
 
 func (c *client) close() {
@@ -107,9 +107,9 @@ func (s *Server) newClient(conn *websocket.Conn) *client {
 	id := atomic.AddUint64(&s.nextID, 1)
 
 	return &client{
-		id:   strconv.FormatUint(id, 10),
-		conn: conn,
-		send: make(chan packets.Packet, sendBuffer),
+		id:       strconv.FormatUint(id, 10),
+		conn:     conn,
+		send:     make(chan packets.Packet, sendBuffer),
 		lastSent: make(map[string]packets.PlayerState),
 	}
 }

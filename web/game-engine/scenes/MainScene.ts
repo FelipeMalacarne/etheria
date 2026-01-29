@@ -9,6 +9,12 @@ import {
 } from "@/game-engine/network/packets";
 import { gameStoreApi } from "@/store/gameStore";
 
+type SharedMap = {
+  width: number;
+  height: number;
+  tiles: number[][];
+};
+
 export class MainScene extends Scene {
   private network: NetworkClient | null = null;
   private playerSprites = new Map<string, Phaser.GameObjects.Rectangle>();
@@ -34,10 +40,15 @@ export class MainScene extends Scene {
     super("MainScene");
   }
 
+  preload() {
+    this.load.json("shared-map", this.getMapUrl());
+  }
+
   create() {
     const tileSize = 32;
-    const mapWidth = 50;
-    const mapHeight = 50;
+    const mapSource = this.getSharedMap();
+    const mapWidth = mapSource.width;
+    const mapHeight = mapSource.height;
     const tilesKey = "basic-tiles";
 
     this.ensureTilesetTexture(tilesKey, tileSize);
@@ -45,7 +56,7 @@ export class MainScene extends Scene {
     this.tileSize = tileSize;
     this.mapWidth = mapWidth;
     this.mapHeight = mapHeight;
-    this.mapData = this.buildMapData(mapWidth, mapHeight);
+    this.mapData = mapSource.tiles;
 
     const map = this.make.tilemap({
       data: this.mapData,
@@ -215,6 +226,52 @@ export class MainScene extends Scene {
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     return `${protocol}://${window.location.hostname}:8080/ws`;
+  }
+
+  private getApiBaseUrl() {
+    if (process.env.NEXT_PUBLIC_API_URL) {
+      return process.env.NEXT_PUBLIC_API_URL;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    return `${protocol}://${window.location.hostname}:8080`;
+  }
+
+  private getMapUrl() {
+    return `${this.getApiBaseUrl()}/map`;
+  }
+
+  private getSharedMap(): SharedMap {
+    const map = this.cache.json.get("shared-map") as SharedMap | undefined;
+    if (
+      !map ||
+      typeof map.width !== "number" ||
+      typeof map.height !== "number" ||
+      !Array.isArray(map.tiles) ||
+      map.tiles.length !== map.height
+    ) {
+      const fallbackWidth = 100;
+      const fallbackHeight = 100;
+      return {
+        width: fallbackWidth,
+        height: fallbackHeight,
+        tiles: this.buildMapData(fallbackWidth, fallbackHeight),
+      };
+    }
+
+    for (const row of map.tiles) {
+      if (!Array.isArray(row) || row.length !== map.width) {
+        const fallbackWidth = 100;
+        const fallbackHeight = 100;
+        return {
+          width: fallbackWidth,
+          height: fallbackHeight,
+          tiles: this.buildMapData(fallbackWidth, fallbackHeight),
+        };
+      }
+    }
+
+    return map;
   }
 
   private toNetworkPosition(value: number) {

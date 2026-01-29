@@ -18,16 +18,20 @@ type Player struct {
 }
 
 type World struct {
-	mu      sync.RWMutex
-	players map[string]*Player
-	mapData [][]int
-	dirty   bool
+	mu        sync.RWMutex
+	players   map[string]*Player
+	mapData   [][]int
+	mapWidth  int
+	mapHeight int
+	dirty     bool
 }
 
-func NewWorld() *World {
+func NewWorld(mapData MapData) *World {
 	return &World{
-		players: make(map[string]*Player),
-		mapData: buildMapData(mapWidth, mapHeight),
+		players:   make(map[string]*Player),
+		mapData:   mapData.Tiles,
+		mapWidth:  mapData.Width,
+		mapHeight: mapData.Height,
 	}
 }
 
@@ -35,8 +39,8 @@ func (w *World) AddPlayer(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	spawnX := w.tileCenter(mapWidth / 2)
-	spawnY := w.tileCenter(mapHeight / 2)
+	spawnX := w.tileCenter(w.mapWidth / 2)
+	spawnY := w.tileCenter(w.mapHeight / 2)
 
 	w.players[id] = &Player{
 		ID:        id,
@@ -219,8 +223,6 @@ func (w *World) SnapshotPlayersInChunkRadius(id string, chunkRadius int, chunkSi
 
 const PositionScale = 100
 const tileSize = 32
-const mapWidth = 50
-const mapHeight = 50
 const tileWorldSize = tileSize * PositionScale
 
 type tilePoint struct {
@@ -237,34 +239,11 @@ func (w *World) tileCenter(tile int) int {
 }
 
 func (w *World) isWalkable(x, y int) bool {
-	if x < 0 || y < 0 || x >= mapWidth || y >= mapHeight {
+	if x < 0 || y < 0 || x >= w.mapWidth || y >= w.mapHeight {
 		return false
 	}
 
 	return w.mapData[y][x] != 2
-}
-
-func buildMapData(width, height int) [][]int {
-	data := make([][]int, 0, height)
-
-	for y := 0; y < height; y += 1 {
-		row := make([]int, 0, width)
-		for x := 0; x < width; x += 1 {
-			isBorder := x == 0 || y == 0 || x == width-1 || y == height-1
-			tileIndex := 0
-
-			if isBorder {
-				tileIndex = 2
-			} else if (x+y)%7 == 0 {
-				tileIndex = 1
-			}
-
-			row = append(row, tileIndex)
-		}
-		data = append(data, row)
-	}
-
-	return data
 }
 
 func absInt(value int) int {

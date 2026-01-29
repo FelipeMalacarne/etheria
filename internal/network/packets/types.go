@@ -3,10 +3,10 @@ package packets
 import "encoding/json"
 
 const (
-	PacketMoveIntent  = "MOVE_INTENT"
+	PacketMoveIntent    = "MOVE_INTENT"
 	PacketStateSnapshot = "STATE_SNAPSHOT"
 	PacketStateDelta    = "STATE_DELTA"
-	PacketWelcome     = "WELCOME"
+	PacketWelcome       = "WELCOME"
 )
 
 type Packet struct {
@@ -21,8 +21,8 @@ type MoveIntent struct {
 
 type PlayerState struct {
 	ID string `json:"id"`
-	X  int `json:"x"`
-	Y  int `json:"y"`
+	X  int    `json:"x"`
+	Y  int    `json:"y"`
 }
 
 type StateSnapshot struct {

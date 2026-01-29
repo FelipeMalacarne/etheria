@@ -18,6 +18,7 @@ import (
 const (
 	defaultPort       = "8080"
 	defaultTickMs     = 50
+	defaultMapPath    = "shared/maps/basic.json"
 	shutdownTimeout   = 5 * time.Second
 	readHeaderTimeout = 5 * time.Second
 )
@@ -26,7 +27,14 @@ func main() {
 	addr := ":" + getenv("PORT", defaultPort)
 	tickRate := time.Duration(getenvInt("TICK_MS", defaultTickMs)) * time.Millisecond
 
-	world := engine.NewWorld()
+	mapPath := getenv("MAP_PATH", defaultMapPath)
+	mapData, err := engine.LoadMapData(mapPath)
+	if err != nil {
+		log.Printf("map load failed (%s): %v", mapPath, err)
+		mapData = engine.DefaultMapData(engine.DefaultMapWidth, engine.DefaultMapHeight)
+	}
+
+	world := engine.NewWorld(mapData)
 	server := websocket.NewServer(world)
 	loop := engine.NewLoop(tickRate, func(tick int64, delta time.Duration) {
 		world.Step(delta.Seconds())
@@ -38,6 +46,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", server.HandleWS)
 	mux.HandleFunc("/players", handlePlayers(world))
+	mux.HandleFunc("/map", handleMap(mapData))
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -129,6 +138,23 @@ func handlePlayers(world *engine.World) http.HandlerFunc {
 		}
 
 		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
+	}
+}
+
+func handleMap(mapData engine.MapData) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "no-store")
+
+		if err := json.NewEncoder(w).Encode(mapData); err != nil {
 			http.Error(w, "failed to encode response", http.StatusInternalServerError)
 		}
 	}

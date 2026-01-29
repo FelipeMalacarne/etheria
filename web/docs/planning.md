@@ -130,4 +130,164 @@ Here are the templates tailored for your **RuneScape-like Web MMO**.
 
 Start by creating these three files in your repo today. It forces your brain to visualize the *finish line* of the MVP, rather than just the code you are writing right now.
 
-Would you like me to expand on the **"Server Architecture"** section regarding how to handle the **Game Loop** in Go?
+# 🏗️ Technical Architecture & Directory Structure
+
+## 1. High-Level Overview
+
+**RuneWeb** (Project Name TBD) follows a **Monorepo** structure.
+
+* **Backend:** A **Golang** server using a Hybrid Architecture (DDD for persistence, Data-Oriented/ECS for the Game Loop).
+* **Frontend:** A **Next.js** application where **React** handles the UI/HUD and **Phaser 3** handles the game world rendering.
+* **Communication:** WebSockets (Binary/Protobuf preferred) for real-time game state; REST/RPC for account management.
+
+---
+
+## 2. Directory Structure
+
+```text
+/project-root
+├── /cmd                    # Application Entry Points
+│   └── /server             # Main Game Server executable (go run ./cmd/server)
+│
+├── /internal               # Private Backend Code
+│   ├── /domain             # [Slow Logic] DDD Layers (Transactional/Persistence)
+│   │   ├── /account        # Auth, User Profiles
+│   │   ├── /inventory      # Item logic, Trading, Banking
+│   │   └── /market         # Grand Exchange logic
+│   │
+│   ├── /game               # [Fast Logic] The Real-Time Engine (Data-Oriented)
+│   │   ├── /engine
+│   │   │   ├── loop.go     # The 600ms Ticker
+│   │   │   └── world.go    # Map Manager & Chunk Loading
+│   │   ├── /systems        # Movement, Combat, Regeneration (ECS-like)
+│   │   └── /spatial        # Spatial Hashing (Find players near X,Y)
+│   │
+│   ├── /network            # Connectivity
+│   │   ├── /websocket      # Client connection manager
+│   │   └── /packets        # Serializers (Proto/JSON)
+│   │
+│   └── /infrastructure     # Implementation details
+│       ├── /postgres       # SQL Queries (sqlc generated)
+│       └── /redis          # Cache & Hot Data
+│
+├── /pkg                    # Shared Code (Utilities, Math, Pathfinding)
+├── /proto                  # Protocol Buffer Definitions (.proto files)
+├── /migrations             # SQL Database Migrations
+│
+└── /web-client             # The Frontend Application (Next.js)
+    ├── /public             # Static Assets (Sprites, Sounds, JSON Maps)
+    ├── /src
+    │   ├── /app            # Next.js App Router Pages
+    │   │   ├── /play       # The Game Page (CSR - Client Side Rendered)
+    │   │   ├── /market     # The Grand Exchange Portal (SSR - Server Side)
+    │   │   └── layout.tsx  # Global Pixel Font Setup
+    │   │
+    │   ├── /components
+    │   │   ├── /game       # The Phaser Wrapper (<PhaserGame />)
+    │   │   └── /ui         # React HUD Components (Inventory, Chat, Stats)
+    │   │       └── /retro  # Custom 9-Slice CSS Components
+    │   │
+    │   ├── /game-engine    # PURE Phaser Logic (No React code)
+    │   │   ├── game.ts     # Phaser Config
+    │   │   ├── /scenes     # BootScene, MainScene
+    │   │   ├── /systems    # InputManager, NetworkManager
+    │   │   └── /entities   # PlayerSprite, MobSprite
+    │   │
+    │   └── /store          # The "Bridge" (Zustand)
+    │       └── gameStore.ts
+
+```
+
+---
+
+## 3. Backend Architecture: The "Hybrid" Model
+
+We avoid pure DDD for the game loop to prevent Garbage Collection pauses. We split the logic into two distinct lifecycles.
+
+### A. The "Outer Loop" (Domain-Driven Design)
+
+Used for low-frequency, high-integrity actions.
+
+* **Use Cases:** Login, Trading, Banking, Quest Completion.
+* **Pattern:** Controller -> Service -> Repository -> Database.
+* **Storage:** PostgreSQL (Strict ACID compliance).
+
+### B. The "Inner Loop" (Game Engine)
+
+Used for high-frequency, performance-critical actions.
+
+* **Use Cases:** Movement, Collision, Combat Calculations, Aggro range.
+* **Pattern:** The **Game Loop** (Heartbeat).
+1. **Process Inputs:** Collect all "Move Intents" from the buffer.
+2. **Update State:** Resolve movement (A*), apply damage, tick timers.
+3. **Broadcast:** Send the new World State snapshot to relevant clients.
+
+
+* **Storage:** In-Memory structs (Map chunks), Redis (Ephemeral state).
+
+---
+
+## 4. Frontend Architecture: The "Bridge" Pattern
+
+We do not render the game world in React. We do not render the UI in Phaser. We bridge them.
+
+### A. The Separation of Concerns
+
+| Feature | Technology | Rendering | State Source |
+| --- | --- | --- | --- |
+| **Game World** | **Phaser 3** | `<canvas>` (WebGL) | WebSocket Packets |
+| **UI (HUD)** | **React** | HTML DOM (Floating) | Zustand Store |
+| **Meta Pages** | **Next.js** | SSR HTML | Server Database |
+
+### B. The "Bridge" (Zustand)
+
+Since Phaser runs outside the React Component Tree, it cannot use `useContext`. We use **Zustand** as a globally accessible store.
+
+1. **Server** sends packet: `{"type": "HP_UPDATE", "val": 45}`
+2. **Phaser** receives packet -> calls `gameStoreApi.getState().setHp(45)`
+3. **React Component** (`<HealthBar />`) subscribes to `useStore(state => state.hp)`
+4. **UI Updates** instantly without re-rendering the Canvas.
+
+---
+
+## 5. UI Architecture: "Retro-Modern"
+
+### A. Styling Strategy
+
+* **No 8-bit Libraries:** We avoid pre-made 8-bit UI libraries due to poor readability and layout constraints.
+* **9-Slice Scaling:** We use standard HTML divs with CSS `border-image` to create scalable, pixel-perfect retro windows.
+* **Tailwind CSS:** Used for layout (Flexbox/Grid) and positioning.
+
+### B. The "Floating HUD"
+
+* **Container:** `pointer-events-none` (Allows clicks to pass through to the game world).
+* **Windows:** `pointer-events-auto` (Captures clicks for Inventory/Chat).
+* **Strategy:** UI elements (Minimap, Chat, Inventory) float over the full-screen canvas.
+
+---
+
+## 6. Database Strategy
+
+### A. PostgreSQL (The Source of Truth)
+
+* **Users:** Auth data.
+* **Characters:** `x, y, region_id`, appearance.
+* **Inventory:** Composite key (`char_id` + `slot_id`) to ensure data integrity.
+* **Skills:** Experience points table.
+
+### B. Redis (The Hot Layer)
+
+* **Grand Exchange Order Book:** Uses `Sorted Sets` for O(1) order matching.
+* **Chat Buffers:** Short-term history for when a player logs in.
+* **Session Data:** "Who is online and on which Map Chunk?"
+
+---
+
+## 7. Networking (The Protocol)
+
+* **Transport:** WebSockets (TCP).
+* **Tick Rate:** 600ms (Server Logic) / 60fps (Client Interpolation).
+* **Movement Logic:**
+1. **Client:** Player clicks -> Calculate A* path locally -> Start moving (Prediction) -> Send `Target(x,y)` to server.
+2. **Server:** Validate path (Anti-cheat) -> Tick movement -> Broadcast `PlayerPos(x,y)`.
+3. **Reconciliation:** If Client and Server disagree (e.g., Lag/Hack), Client "snaps" to Server position.
