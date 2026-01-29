@@ -16,7 +16,7 @@ import (
 
 const (
 	defaultPort       = "8080"
-	defaultTickMs     = 200
+	defaultTickMs     = 50
 	shutdownTimeout   = 5 * time.Second
 	readHeaderTimeout = 5 * time.Second
 )
