@@ -1,0 +1,41 @@
+package packets
+
+import "encoding/json"
+
+const (
+	PacketMoveIntent  = "MOVE_INTENT"
+	PacketStateUpdate = "STATE_UPDATE"
+)
+
+type Packet struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+type MoveIntent struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+type PlayerState struct {
+	ID string `json:"id"`
+	X  int    `json:"x"`
+	Y  int    `json:"y"`
+}
+
+type StateUpdate struct {
+	Tick    int64         `json:"tick"`
+	Players []PlayerState `json:"players"`
+}
+
+func NewPacket(packetType string, payload any) (Packet, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return Packet{}, err
+	}
+
+	return Packet{
+		Type:    packetType,
+		Payload: data,
+	}, nil
+}
