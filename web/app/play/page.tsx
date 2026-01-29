@@ -24,7 +24,7 @@ const PhaserGame = dynamic(() => import("@/components/game/PhaserGame"), {
 });
 
 export default function PlayPage() {
-  const { hp, maxHp } = useGameStore();
+  const { hp, maxHp, isConnected, playerId } = useGameStore();
 
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden">
@@ -35,27 +35,41 @@ export default function PlayPage() {
 
       {/* LAYER 2: Floating HUD (Pointer Events Trick) */}
       <div className="absolute inset-0 z-10 pointer-events-none p-6 flex flex-col justify-between">
-        <PlayerProfileCard
-          className="pointer-events-auto w-100 opacity-90"
-          playerName="Cobalt"
-          avatarSrc="/avatars/orcdev.jpeg"
-          avatarFallback="C"
-          level={25}
-          stats={{
-            health: { current: hp, max: maxHp },
-            mana: { current: 320, max: 400 },
-            experience: { current: 7500, max: 10000 },
-          }}
-          playerClass="Web Dev Warrior"
-          customStats={[
-            {
-              label: "Stamina",
-              value: 72,
-              max: 100,
-              color: "bg-green-500",
-            },
-          ]}
-        />
+        <div className="flex flex-col gap-3 pointer-events-auto w-100 opacity-90">
+          <PlayerProfileCard
+            playerName="Cobalt"
+            avatarSrc="/avatars/orcdev.jpeg"
+            avatarFallback="C"
+            level={25}
+            stats={{
+              health: { current: hp, max: maxHp },
+              mana: { current: 320, max: 400 },
+              experience: { current: 7500, max: 10000 },
+            }}
+            playerClass="Web Dev Warrior"
+            customStats={[
+              {
+                label: "Stamina",
+                value: 72,
+                max: 100,
+                color: "bg-green-500",
+              },
+            ]}
+          />
+          <Card className="px-4 py-2 text-xs">
+            <div className="flex items-center justify-between gap-4">
+              <span className="uppercase tracking-[0.2em] text-muted-foreground">
+                Network
+              </span>
+              <span className={isConnected ? "text-green-400" : "text-red-400"}>
+                {isConnected ? "Connected" : "Disconnected"}
+              </span>
+            </div>
+            <div className="mt-1 text-muted-foreground">
+              Player ID: {playerId ?? "—"}
+            </div>
+          </Card>
+        </div>
 
         {/* Bottom Left: Chat */}
         <Card className="h-32 opacity-90 w-5xl pointer-events-auto">

@@ -130,6 +130,7 @@ func (s *Server) addClient(client *client) {
 	s.mu.Unlock()
 
 	s.world.AddPlayer(client.id)
+	s.sendPacket(client, packets.PacketWelcome, packets.Welcome{ID: client.id})
 }
 
 func (s *Server) removeClient(client *client) {
@@ -186,6 +187,19 @@ func (s *Server) handlePacket(client *client, packet packets.Packet) {
 			return
 		}
 		s.world.SetPlayerPosition(client.id, intent.X, intent.Y)
+	default:
+	}
+}
+
+func (s *Server) sendPacket(client *client, packetType string, payload any) {
+	packet, err := packets.NewPacket(packetType, payload)
+	if err != nil {
+		log.Printf("packet encode failed (%s): %v", client.id, err)
+		return
+	}
+
+	select {
+	case client.send <- packet:
 	default:
 	}
 }

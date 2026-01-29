@@ -1,7 +1,16 @@
 import { Scene } from "phaser";
+import { NetworkClient } from "@/game-engine/network/client";
+import { PlayerState, Welcome } from "@/game-engine/network/packets";
 import { gameStoreApi } from "@/store/gameStore";
 
 export class MainScene extends Scene {
+  private network: NetworkClient | null = null;
+  private playerSprites = new Map<string, Phaser.GameObjects.Rectangle>();
+  private localPlayerId: string | null = null;
+  private isFollowing = false;
+  private playerSize = 18;
+  private isShuttingDown = false;
+
   constructor() {
     super("MainScene");
   }
@@ -31,26 +40,132 @@ export class MainScene extends Scene {
     map.createLayer(0, tileset, 0, 0);
 
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
+    this.playerSize = tileSize * 0.6;
 
-    const player = this.add.rectangle(
-      map.widthInPixels / 2,
-      map.heightInPixels / 2,
-      tileSize * 0.6,
-      tileSize * 0.6,
-      0xff0000,
-    );
-    this.physics.add.existing(player);
-    this.cameras.main.startFollow(player);
+    this.setupNetwork();
 
-    // 2. Simple interaction example
-    this.input.on("pointerdown", () => {
-      // Simulate taking damage when clicking
-      const currentHp = gameStoreApi.getState().hp;
-      const newHp = Math.max(0, currentHp - 1);
-
-      // Update React Store
-      gameStoreApi.getState().updateHp(newHp, 10);
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      this.network?.sendMoveIntent(
+        Math.round(worldPoint.x),
+        Math.round(worldPoint.y),
+      );
     });
+
+    this.events.once("shutdown", () => {
+      this.isShuttingDown = true;
+      this.network?.disconnect();
+      this.playerSprites.clear();
+    });
+  }
+
+  private setupNetwork() {
+    this.network = new NetworkClient({
+      onConnectionChange: (connected) => {
+        if (this.isShuttingDown) {
+          return;
+        }
+        gameStoreApi.getState().setConnected(connected);
+        if (!connected) {
+          gameStoreApi.getState().setPlayerId(null);
+          this.localPlayerId = null;
+          this.isFollowing = false;
+        }
+      },
+      onWelcome: (welcome) => {
+        this.handleWelcome(welcome);
+      },
+      onStateUpdate: (state) => {
+        this.syncPlayers(state.players);
+      },
+    });
+
+    this.network.connect(this.getWebSocketUrl());
+  }
+
+  private handleWelcome(welcome: Welcome) {
+    if (this.isShuttingDown || !this.sys.isActive()) {
+      return;
+    }
+
+    this.localPlayerId = welcome.id;
+    gameStoreApi.getState().setPlayerId(welcome.id);
+    const sprite = this.playerSprites.get(welcome.id);
+    if (sprite) {
+      sprite.setFillStyle(0xff6b6b);
+    }
+
+    this.followPlayerIfReady();
+  }
+
+  private syncPlayers(players: PlayerState[]) {
+    if (this.isShuttingDown || !this.sys.isActive()) {
+      return;
+    }
+
+    const seen = new Set(players.map((player) => player.id));
+
+    for (const [id, sprite] of this.playerSprites) {
+      if (!seen.has(id)) {
+        sprite.destroy();
+        this.playerSprites.delete(id);
+        if (id === this.localPlayerId) {
+          this.isFollowing = false;
+        }
+      }
+    }
+
+    for (const player of players) {
+      const isLocal = player.id === this.localPlayerId;
+      let sprite = this.playerSprites.get(player.id);
+
+      if (!sprite) {
+        sprite = this.add.rectangle(
+          player.x,
+          player.y,
+          this.playerSize,
+          this.playerSize,
+          isLocal ? 0xff6b6b : 0x4d96ff,
+        );
+        this.playerSprites.set(player.id, sprite);
+      } else {
+        sprite.setPosition(player.x, player.y);
+        if (isLocal) {
+          sprite.setFillStyle(0xff6b6b);
+        }
+      }
+    }
+
+    this.followPlayerIfReady();
+  }
+
+  private followPlayerIfReady() {
+    if (this.isFollowing || this.playerSprites.size === 0) {
+      return;
+    }
+
+    const targetId = this.localPlayerId ?? this.playerSprites.keys().next().value;
+    if (!targetId) {
+      return;
+    }
+
+    const sprite = this.playerSprites.get(targetId);
+    if (!sprite) {
+      return;
+    }
+
+    this.cameras.main.startFollow(sprite);
+    this.isFollowing = true;
+  }
+
+  private getWebSocketUrl() {
+    const envUrl = process.env.NEXT_PUBLIC_WS_URL;
+    if (envUrl) {
+      return envUrl;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${protocol}://${window.location.hostname}:8080/ws`;
   }
 
   private ensureTilesetTexture(key: string, tileSize: number) {

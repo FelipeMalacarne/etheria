@@ -5,6 +5,7 @@ import "encoding/json"
 const (
 	PacketMoveIntent  = "MOVE_INTENT"
 	PacketStateUpdate = "STATE_UPDATE"
+	PacketWelcome     = "WELCOME"
 )
 
 type Packet struct {
@@ -26,6 +27,10 @@ type PlayerState struct {
 type StateUpdate struct {
 	Tick    int64         `json:"tick"`
 	Players []PlayerState `json:"players"`
+}
+
+type Welcome struct {
+	ID string `json:"id"`
 }
 
 func NewPacket(packetType string, payload any) (Packet, error) {
