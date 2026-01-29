@@ -36,7 +36,7 @@ export default function PlayPage() {
       {/* LAYER 2: Floating HUD (Pointer Events Trick) */}
       <div className="absolute inset-0 z-10 pointer-events-none p-6 flex flex-col justify-between">
         <PlayerProfileCard
-          className="pointer-events-auto"
+          className="pointer-events-auto w-100 opacity-90"
           playerName="Cobalt"
           avatarSrc="/avatars/orcdev.jpeg"
           avatarFallback="C"
@@ -58,10 +58,10 @@ export default function PlayPage() {
         />
 
         {/* Bottom Left: Chat */}
-          <Card className="h-32 opacity-90 w-5xl pointer-events-auto">
-            <p className="text-yellow-400">[System]: Welcome to RuneWeb.</p>
-            <p className="text-white">Player1: selling lobbies 150gp</p>
-          </Card>
+        <Card className="h-32 opacity-90 w-5xl pointer-events-auto">
+          <p className="text-yellow-400">[System]: Welcome to RuneWeb.</p>
+          <p className="text-white">Player1: selling lobbies 150gp</p>
+        </Card>
       </div>
     </div>
   );
