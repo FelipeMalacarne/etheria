@@ -7,6 +7,8 @@ import {
   StateSnapshot,
   Welcome,
 } from "@/game-engine/network/packets";
+import { getApiBaseUrl, getWsBaseUrl } from "@/lib/config";
+import { authStoreApi } from "@/store/authStore";
 import { gameStoreApi } from "@/store/gameStore";
 
 type SharedMap = {
@@ -130,7 +132,12 @@ export class MainScene extends Scene {
       },
     });
 
-    this.network.connect(this.getWebSocketUrl());
+    const wsUrl = this.getWebSocketUrl();
+    if (!wsUrl) {
+      return;
+    }
+
+    this.network.connect(wsUrl);
   }
 
   private handleWelcome(welcome: Welcome) {
@@ -218,27 +225,15 @@ export class MainScene extends Scene {
     this.isFollowing = true;
   }
 
-  private getWebSocketUrl() {
-    const envUrl = process.env.NEXT_PUBLIC_WS_URL;
-    if (envUrl) {
-      return envUrl;
-    }
-
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${window.location.hostname}:8080/ws`;
-  }
-
-  private getApiBaseUrl() {
-    if (process.env.NEXT_PUBLIC_API_URL) {
-      return process.env.NEXT_PUBLIC_API_URL;
-    }
-
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
-    return `${protocol}://${window.location.hostname}:8080`;
-  }
-
   private getMapUrl() {
-    return `${this.getApiBaseUrl()}/map`;
+    const base = getApiBaseUrl();
+    if (!base) {
+      return "";
+    }
+
+    const url = new URL(base);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/map`;
+    return url.toString();
   }
 
   private getSharedMap(): SharedMap {
@@ -272,6 +267,19 @@ export class MainScene extends Scene {
     }
 
     return map;
+  }
+
+  private getWebSocketUrl() {
+    const base = getWsBaseUrl();
+    const token = authStoreApi.getState().token;
+    if (!base || !token) {
+      return "";
+    }
+
+    const url = new URL(base);
+    url.pathname = `${url.pathname.replace(/\/$/, "")}/ws`;
+    url.searchParams.set("token", token);
+    return url.toString();
   }
 
   private toNetworkPosition(value: number) {

@@ -1,12 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import dynamic from "next/dynamic";
-import { useGameStore } from "@/store/gameStore";
+import { useRouter } from "next/navigation";
+
 import { Card } from "@/components/ui/8bit/card";
 import PlayerProfileCard from "@/components/ui/8bit/blocks/player-profile-card";
 import LoadingScreen from "@/components/ui/8bit/blocks/loading-screen";
 import FriendList from "@/components/ui/8bit/blocks/friend-list";
 import { usePlayers } from "@/hooks/use-players";
+import { Button } from "@/components/ui/button";
+import { useAuthStore } from "@/store/authStore";
+import { useGameStore } from "@/store/gameStore";
 
 // Lazy load Phaser (Disable SSR)
 const PhaserGame = dynamic(() => import("@/components/game/PhaserGame"), {
@@ -26,11 +31,36 @@ const PhaserGame = dynamic(() => import("@/components/game/PhaserGame"), {
 });
 
 export default function PlayPage() {
+  const router = useRouter();
+  const { token, user, clearSession } = useAuthStore();
   const { hp, maxHp, isConnected, playerId } = useGameStore();
-  const { players } = usePlayers();
+  const { players } = usePlayers({ enabled: Boolean(token), token });
+
+  useEffect(() => {
+    if (!token) {
+      router.replace("/login");
+    }
+  }, [router, token]);
+
+  if (!token) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-black text-white">
+        Connecting to login...
+      </div>
+    );
+  }
+
+  const handleLogout = () => {
+    clearSession();
+    router.replace("/login");
+  };
+
   const friendPlayers = players.map((player) => ({
     id: player.id,
-    name: player.id === playerId ? `You (${player.id})` : `Player ${player.id}`,
+    name:
+      player.id === playerId
+        ? `You (${user?.username ?? player.id})`
+        : `Player ${player.id}`,
     status: player.id === playerId ? "ingame" : "online",
     avatarFallback: player.id.charAt(0).toUpperCase(),
     activity: `(${Math.round(player.x)}, ${Math.round(player.y)})`,
@@ -47,9 +77,9 @@ export default function PlayPage() {
       <div className="absolute inset-0 z-10 pointer-events-none p-6 flex flex-col justify-between">
         <div className="flex flex-col gap-3 pointer-events-auto w-100 opacity-90">
           <PlayerProfileCard
-            playerName="Cobalt"
+            playerName={user?.username ?? "Adventurer"}
             avatarSrc="/avatars/orcdev.jpeg"
-            avatarFallback="C"
+            avatarFallback={(user?.username ?? "A").charAt(0).toUpperCase()}
             level={25}
             stats={{
               health: { current: hp, max: maxHp },
@@ -71,9 +101,14 @@ export default function PlayPage() {
               <span className="uppercase tracking-[0.2em] text-muted-foreground">
                 Network
               </span>
-              <span className={isConnected ? "text-green-400" : "text-red-400"}>
-                {isConnected ? "Connected" : "Disconnected"}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className={isConnected ? "text-green-400" : "text-red-400"}>
+                  {isConnected ? "Connected" : "Disconnected"}
+                </span>
+                <Button size="sm" variant="outline" onClick={handleLogout}>
+                  Logout
+                </Button>
+              </div>
             </div>
             <div className="mt-1 text-muted-foreground">
               Player ID: {playerId ?? "—"}

@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
 
+	appauth "github.com/felipemalacarne/etheria/internal/app/auth"
 	"github.com/felipemalacarne/etheria/internal/game/engine"
 	"github.com/felipemalacarne/etheria/internal/network/packets"
 )
@@ -18,8 +18,8 @@ import (
 const (
 	writeTimeout   = 5 * time.Second
 	sendBuffer     = 16
-	chunkSizeTiles = 8
-	chunkRadius    = 1
+	ChunkSizeTiles = 8
+	ChunkRadius    = 1
 )
 
 var upgrader = websocket.Upgrader{
@@ -31,15 +31,16 @@ var upgrader = websocket.Upgrader{
 }
 
 type Server struct {
-	world    *engine.World
-	clients  map[*client]struct{}
-	nextID   uint64
-	mu       sync.RWMutex
-	lastTick int64
+	world         *engine.World
+	auth          *appauth.Service
+	clients       map[*client]struct{}
+	clientsByUser map[string]*client
+	mu            sync.RWMutex
+	lastTick      int64
 }
 
 type client struct {
-	id        string
+	userID    string
 	conn      *websocket.Conn
 	send      chan packets.Packet
 	closeOnce sync.Once
@@ -54,21 +55,35 @@ func (c *client) close() {
 	})
 }
 
-func NewServer(world *engine.World) *Server {
+func NewServer(world *engine.World, authManager *appauth.Service) *Server {
 	return &Server{
-		world:   world,
-		clients: make(map[*client]struct{}),
+		world:         world,
+		auth:          authManager,
+		clients:       make(map[*client]struct{}),
+		clientsByUser: make(map[string]*client),
 	}
 }
 
 func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	user, ok, err := s.auth.AuthenticateToken(r.Context(), token)
+	if err != nil {
+		log.Printf("auth token error: %v", err)
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("ws upgrade failed: %v", err)
 		return
 	}
 
-	client := s.newClient(conn)
+	client := s.newClient(conn, user.ID)
 	s.addClient(client)
 
 	go s.writeLoop(client)
@@ -103,11 +118,9 @@ func (s *Server) Close() {
 	}
 }
 
-func (s *Server) newClient(conn *websocket.Conn) *client {
-	id := atomic.AddUint64(&s.nextID, 1)
-
+func (s *Server) newClient(conn *websocket.Conn, userID string) *client {
 	return &client{
-		id:       strconv.FormatUint(id, 10),
+		userID:   userID,
 		conn:     conn,
 		send:     make(chan packets.Packet, sendBuffer),
 		lastSent: make(map[string]packets.PlayerState),
@@ -116,11 +129,20 @@ func (s *Server) newClient(conn *websocket.Conn) *client {
 
 func (s *Server) addClient(client *client) {
 	s.mu.Lock()
+	if existing, ok := s.clientsByUser[client.userID]; ok {
+		delete(s.clients, existing)
+		delete(s.clientsByUser, client.userID)
+		s.mu.Unlock()
+		s.world.RemovePlayer(existing.userID)
+		existing.close()
+		s.mu.Lock()
+	}
 	s.clients[client] = struct{}{}
+	s.clientsByUser[client.userID] = client
 	s.mu.Unlock()
 
-	s.world.AddPlayer(client.id)
-	s.sendPacket(client, packets.PacketWelcome, packets.Welcome{ID: client.id})
+	s.world.AddPlayer(client.userID)
+	s.sendPacket(client, packets.PacketWelcome, packets.Welcome{ID: client.userID})
 	s.sendSnapshot(client)
 }
 
@@ -131,9 +153,12 @@ func (s *Server) removeClient(client *client) {
 		return
 	}
 	delete(s.clients, client)
+	if current, ok := s.clientsByUser[client.userID]; ok && current == client {
+		delete(s.clientsByUser, client.userID)
+	}
 	s.mu.Unlock()
 
-	s.world.RemovePlayer(client.id)
+	s.world.RemovePlayer(client.userID)
 	client.close()
 }
 
@@ -146,7 +171,7 @@ func (s *Server) readLoop(client *client) {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return
 			}
-			log.Printf("read error (%s): %v", client.id, err)
+			log.Printf("read error (%s): %v", client.userID, err)
 			return
 		}
 
@@ -162,7 +187,7 @@ func (s *Server) writeLoop(client *client) {
 		}
 
 		if err := client.conn.WriteJSON(packet); err != nil {
-			log.Printf("write error (%s): %v", client.id, err)
+			log.Printf("write error (%s): %v", client.userID, err)
 			s.removeClient(client)
 			return
 		}
@@ -174,10 +199,10 @@ func (s *Server) handlePacket(client *client, packet packets.Packet) {
 	case packets.PacketMoveIntent:
 		var intent packets.MoveIntent
 		if err := json.Unmarshal(packet.Payload, &intent); err != nil {
-			log.Printf("invalid move intent (%s): %v", client.id, err)
+			log.Printf("invalid move intent (%s): %v", client.userID, err)
 			return
 		}
-		if ok := s.world.SetPlayerTarget(client.id, intent.X, intent.Y); !ok {
+		if ok := s.world.SetPlayerTarget(client.userID, intent.X, intent.Y); !ok {
 			return
 		}
 	default:
@@ -187,7 +212,7 @@ func (s *Server) handlePacket(client *client, packet packets.Packet) {
 func (s *Server) sendPacket(client *client, packetType string, payload any) {
 	packet, err := packets.NewPacket(packetType, payload)
 	if err != nil {
-		log.Printf("packet encode failed (%s): %v", client.id, err)
+		log.Printf("packet encode failed (%s): %v", client.userID, err)
 		return
 	}
 
@@ -199,7 +224,7 @@ func (s *Server) sendPacket(client *client, packetType string, payload any) {
 
 func (s *Server) sendSnapshot(client *client) {
 	tick := atomic.LoadInt64(&s.lastTick)
-	players, ok := s.world.SnapshotPlayersInChunkRadius(client.id, chunkRadius, chunkSizeTiles)
+	players, ok := s.world.SnapshotPlayersInChunkRadius(client.userID, ChunkRadius, ChunkSizeTiles)
 	if !ok {
 		return
 	}
@@ -228,7 +253,7 @@ func (s *Server) sendSnapshot(client *client) {
 }
 
 func (s *Server) sendDelta(client *client, tick int64) {
-	players, ok := s.world.SnapshotPlayersInChunkRadius(client.id, chunkRadius, chunkSizeTiles)
+	players, ok := s.world.SnapshotPlayersInChunkRadius(client.userID, ChunkRadius, ChunkSizeTiles)
 	if !ok {
 		return
 	}

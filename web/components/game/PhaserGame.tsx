@@ -3,13 +3,15 @@
 import { useEffect, useRef } from "react";
 import { Game, AUTO, Scale } from "phaser";
 import { MainScene } from "@/game-engine/scenes/MainScene";
+import { useAuthStore } from "@/store/authStore";
 
 export default function PhaserGame() {
   const gameRef = useRef<Game | null>(null);
   const parentEl = useRef<HTMLDivElement>(null);
+  const token = useAuthStore((state) => state.token);
 
   useEffect(() => {
-    if (!parentEl.current) return;
+    if (!parentEl.current || !token) return;
 
     const config: Phaser.Types.Core.GameConfig = {
       type: AUTO,
@@ -33,8 +35,9 @@ export default function PhaserGame() {
 
     return () => {
       gameRef.current?.destroy(true);
+      gameRef.current = null;
     };
-  }, []);
+  }, [token]);
 
   return <div ref={parentEl} className="w-full h-full" />;
 }

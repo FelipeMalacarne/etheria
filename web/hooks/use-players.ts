@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { getApiBaseUrl } from "@/lib/config";
+
 type ServerPlayer = {
   id: string;
   x: number;
@@ -14,25 +16,13 @@ type UsePlayersOptions = {
   pollMs?: number;
   baseUrl?: string;
   enabled?: boolean;
-};
-
-const getDefaultBaseUrl = () => {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-
-  if (typeof window === "undefined") {
-    return "";
-  }
-
-  const protocol = window.location.protocol === "https:" ? "https" : "http";
-  return `${protocol}://${window.location.hostname}:8080`;
+  token?: string | null;
 };
 
 export function usePlayers(options: UsePlayersOptions = {}) {
-  const { pollMs = 2000, baseUrl, enabled = true } = options;
+  const { pollMs = 2000, baseUrl, enabled = true, token } = options;
   const resolvedBaseUrl = useMemo(
-    () => baseUrl ?? getDefaultBaseUrl(),
+    () => baseUrl ?? getApiBaseUrl(),
     [baseUrl]
   );
   const [players, setPlayers] = useState<ServerPlayer[]>([]);
@@ -40,7 +30,10 @@ export function usePlayers(options: UsePlayersOptions = {}) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || !resolvedBaseUrl) {
+    if (!enabled || !resolvedBaseUrl || !token) {
+      setPlayers([]);
+      setError(null);
+      setIsLoading(false);
       return;
     }
 
@@ -49,7 +42,9 @@ export function usePlayers(options: UsePlayersOptions = {}) {
 
     const fetchPlayers = async () => {
       try {
-        const response = await fetch(`${resolvedBaseUrl}/players`, {
+        const url = new URL(`${resolvedBaseUrl}/players`);
+        url.searchParams.set("token", token);
+        const response = await fetch(url.toString(), {
           cache: "no-store",
         });
         if (!response.ok) {
@@ -81,7 +76,7 @@ export function usePlayers(options: UsePlayersOptions = {}) {
         clearInterval(timerId);
       }
     };
-  }, [enabled, pollMs, resolvedBaseUrl]);
+  }, [enabled, pollMs, resolvedBaseUrl, token]);
 
   return { players, isLoading, error };
 }
