@@ -21,11 +21,9 @@ export class MainScene extends Scene {
   private mapData: number[][] = [];
   private localPath: { x: number; y: number }[] = [];
   private localPathIndex = 0;
-  private serverPathIndex = 0;
   private localPredicted: { x: number; y: number } | null = null;
   private localServerPos: { x: number; y: number } | null = null;
   private interpolationSpeed = 220;
-  private pathTargetThreshold = 6;
   private clientMoveSpeed = 140;
   private correctionRate = 8;
   private snapDistance = 96;
@@ -80,7 +78,6 @@ export class MainScene extends Scene {
       this.playerTargets.clear();
       this.localPath = [];
       this.localPathIndex = 0;
-      this.serverPathIndex = 0;
       this.localPredicted = null;
       this.localServerPos = null;
     });
@@ -94,7 +91,6 @@ export class MainScene extends Scene {
     const deltaSeconds = delta / 1000;
     this.interpolatePlayers(deltaSeconds);
     this.updateLocalPrediction(deltaSeconds);
-    this.advanceServerPath();
   }
 
   private setupNetwork() {
@@ -110,7 +106,6 @@ export class MainScene extends Scene {
           this.isFollowing = false;
           this.localPath = [];
           this.localPathIndex = 0;
-          this.serverPathIndex = 0;
           this.localPredicted = null;
           this.localServerPos = null;
         }
@@ -159,7 +154,6 @@ export class MainScene extends Scene {
           this.localServerPos = null;
           this.localPath = [];
           this.localPathIndex = 0;
-          this.serverPathIndex = 0;
         }
       }
     }
@@ -286,10 +280,6 @@ export class MainScene extends Scene {
 
     const path = this.findPath(startGrid, goalGrid);
     if (path.length === 0) {
-      this.network.sendMoveIntent(
-        this.toNetworkPosition(worldX),
-        this.toNetworkPosition(worldY),
-      );
       return;
     }
 
@@ -297,49 +287,11 @@ export class MainScene extends Scene {
       .slice(1)
       .map((point) => this.gridToWorld(point.x, point.y));
     this.localPathIndex = 0;
-    this.serverPathIndex = 0;
 
-    this.sendNextPathTarget();
-  }
-
-  private sendNextPathTarget() {
-    if (!this.network || this.serverPathIndex >= this.localPath.length) {
-      return;
-    }
-
-    const next = this.localPath[this.serverPathIndex];
     this.network.sendMoveIntent(
-      this.toNetworkPosition(next.x),
-      this.toNetworkPosition(next.y),
+      this.toNetworkPosition(worldX),
+      this.toNetworkPosition(worldY),
     );
-  }
-
-  private advanceServerPath() {
-    if (!this.network || this.localPath.length === 0) {
-      return;
-    }
-
-    if (this.serverPathIndex >= this.localPath.length) {
-      return;
-    }
-
-    const reference = this.localServerPos ?? this.localPredicted;
-    if (!reference) {
-      return;
-    }
-
-    const next = this.localPath[this.serverPathIndex];
-    const distance = Phaser.Math.Distance.Between(
-      reference.x,
-      reference.y,
-      next.x,
-      next.y,
-    );
-
-    if (distance <= this.pathTargetThreshold) {
-      this.serverPathIndex += 1;
-      this.sendNextPathTarget();
-    }
   }
 
   private getLocalPlayerWorldPosition() {

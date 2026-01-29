@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"math"
 	"sync"
 )
@@ -12,12 +13,15 @@ type Player struct {
 	TargetX   int
 	TargetY   int
 	HasTarget bool
+	Path      []tilePoint
+	PathIndex int
 }
 
 type World struct {
 	mu      sync.RWMutex
 	players map[string]*Player
 	mapData [][]int
+	dirty   bool
 }
 
 func NewWorld() *World {
@@ -41,7 +45,11 @@ func (w *World) AddPlayer(id string) {
 		TargetX:   spawnX,
 		TargetY:   spawnY,
 		HasTarget: false,
+		Path:      nil,
+		PathIndex: 0,
 	}
+
+	w.dirty = true
 }
 
 func (w *World) RemovePlayer(id string) {
@@ -49,6 +57,8 @@ func (w *World) RemovePlayer(id string) {
 	defer w.mu.Unlock()
 
 	delete(w.players, id)
+
+	w.dirty = true
 }
 
 func (w *World) SetPlayerTarget(id string, x, y int) bool {
@@ -65,14 +75,27 @@ func (w *World) SetPlayerTarget(id string, x, y int) bool {
 		return false
 	}
 
-	currentTileX, currentTileY := w.toTileCoords(player.X, player.Y)
-	if absInt(targetTileX-currentTileX)+absInt(targetTileY-currentTileY) > 1 {
+	startTileX, startTileY := w.toTileCoords(player.X, player.Y)
+	path := w.findPath(tilePoint{X: startTileX, Y: startTileY}, tilePoint{X: targetTileX, Y: targetTileY})
+	if len(path) == 0 {
 		return false
 	}
 
-	player.TargetX = w.tileCenter(targetTileX)
-	player.TargetY = w.tileCenter(targetTileY)
-	player.HasTarget = !(player.TargetX == player.X && player.TargetY == player.Y)
+	player.Path = path
+	player.PathIndex = 1
+	if len(path) <= 1 {
+		player.TargetX = player.X
+		player.TargetY = player.Y
+		player.HasTarget = false
+		player.Path = nil
+		player.PathIndex = 0
+		return true
+	}
+
+	next := path[player.PathIndex]
+	player.TargetX = w.tileCenter(next.X)
+	player.TargetY = w.tileCenter(next.Y)
+	player.HasTarget = true
 
 	return true
 }
@@ -101,15 +124,30 @@ func (w *World) Step(deltaSeconds float64) {
 	const speedScaled = speed * positionScale
 
 	for _, player := range w.players {
-		if !player.HasTarget {
+		if player.PathIndex >= len(player.Path) {
+			player.Path = nil
+			player.PathIndex = 0
+			player.HasTarget = false
 			continue
+		}
+
+		if !player.HasTarget {
+			next := player.Path[player.PathIndex]
+			player.TargetX = w.tileCenter(next.X)
+			player.TargetY = w.tileCenter(next.Y)
+			player.HasTarget = true
 		}
 
 		dx := float64(player.TargetX - player.X)
 		dy := float64(player.TargetY - player.Y)
 		distance := math.Hypot(dx, dy)
 		if distance == 0 {
+			player.PathIndex += 1
 			player.HasTarget = false
+			if player.PathIndex >= len(player.Path) {
+				player.Path = nil
+				player.PathIndex = 0
+			}
 			continue
 		}
 
@@ -117,14 +155,33 @@ func (w *World) Step(deltaSeconds float64) {
 		if distance <= step {
 			player.X = player.TargetX
 			player.Y = player.TargetY
+			player.PathIndex += 1
 			player.HasTarget = false
+			if player.PathIndex >= len(player.Path) {
+				player.Path = nil
+				player.PathIndex = 0
+			}
+			w.dirty = true
 			continue
 		}
 
 		ratio := step / distance
 		player.X += int(math.Round(dx * ratio))
 		player.Y += int(math.Round(dy * ratio))
+		w.dirty = true
 	}
+}
+
+func (w *World) DrainDirty() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if !w.dirty {
+		return false
+	}
+
+	w.dirty = false
+	return true
 }
 
 const positionScale = 100
@@ -132,6 +189,11 @@ const tileSize = 32
 const mapWidth = 50
 const mapHeight = 50
 const tileWorldSize = tileSize * positionScale
+
+type tilePoint struct {
+	X int
+	Y int
+}
 
 func (w *World) toTileCoords(x, y int) (int, int) {
 	return x / tileWorldSize, y / tileWorldSize
@@ -178,4 +240,109 @@ func absInt(value int) int {
 	}
 
 	return value
+}
+
+func (w *World) findPath(start, goal tilePoint) []tilePoint {
+	if !w.isWalkable(goal.X, goal.Y) {
+		return nil
+	}
+
+	startKey := keyFor(start.X, start.Y)
+	goalKey := keyFor(goal.X, goal.Y)
+
+	open := []pathNode{{
+		point: start,
+		f:     heuristic(start, goal),
+	}}
+	openSet := map[string]struct{}{startKey: {}}
+	cameFrom := map[string]string{}
+	gScore := map[string]int{startKey: 0}
+
+	for len(open) > 0 {
+		currentIndex := 0
+		for i := 1; i < len(open); i += 1 {
+			if open[i].f < open[currentIndex].f {
+				currentIndex = i
+			}
+		}
+
+		current := open[currentIndex]
+		open = append(open[:currentIndex], open[currentIndex+1:]...)
+		currentKey := keyFor(current.point.X, current.point.Y)
+		delete(openSet, currentKey)
+
+		if currentKey == goalKey {
+			return reconstructPath(cameFrom, goalKey)
+		}
+
+		neighbors := []tilePoint{
+			{X: current.point.X + 1, Y: current.point.Y},
+			{X: current.point.X - 1, Y: current.point.Y},
+			{X: current.point.X, Y: current.point.Y + 1},
+			{X: current.point.X, Y: current.point.Y - 1},
+		}
+
+		for _, neighbor := range neighbors {
+			if !w.isWalkable(neighbor.X, neighbor.Y) {
+				continue
+			}
+
+			neighborKey := keyFor(neighbor.X, neighbor.Y)
+			tentativeG := gScore[currentKey] + 1
+			if existingG, ok := gScore[neighborKey]; ok && tentativeG >= existingG {
+				continue
+			}
+
+			cameFrom[neighborKey] = currentKey
+			gScore[neighborKey] = tentativeG
+			fScore := tentativeG + heuristic(neighbor, goal)
+
+			if _, ok := openSet[neighborKey]; !ok {
+				open = append(open, pathNode{point: neighbor, f: fScore})
+				openSet[neighborKey] = struct{}{}
+			}
+		}
+	}
+
+	return nil
+}
+
+type pathNode struct {
+	point tilePoint
+	f     int
+}
+
+func keyFor(x, y int) string {
+	return fmt.Sprintf("%d,%d", x, y)
+}
+
+func heuristic(a, b tilePoint) int {
+	return absInt(a.X-b.X) + absInt(a.Y-b.Y)
+}
+
+func reconstructPath(cameFrom map[string]string, goalKey string) []tilePoint {
+	var path []tilePoint
+	currentKey := goalKey
+
+	for {
+		x, y := parseKey(currentKey)
+		path = append(path, tilePoint{X: x, Y: y})
+		prev, ok := cameFrom[currentKey]
+		if !ok {
+			break
+		}
+		currentKey = prev
+	}
+
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+
+	return path
+}
+
+func parseKey(key string) (int, int) {
+	var x, y int
+	fmt.Sscanf(key, "%d,%d", &x, &y)
+	return x, y
 }
