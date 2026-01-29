@@ -1,14 +1,17 @@
 import {
   Packet,
   PacketMoveIntent,
-  PacketStateUpdate,
+  PacketStateDelta,
+  PacketStateSnapshot,
   PacketWelcome,
-  StateUpdate,
+  StateDelta,
+  StateSnapshot,
   Welcome,
 } from "./packets";
 
 type NetworkHandlers = {
-  onStateUpdate?: (update: StateUpdate) => void;
+  onStateSnapshot?: (snapshot: StateSnapshot) => void;
+  onStateDelta?: (delta: StateDelta) => void;
   onWelcome?: (welcome: Welcome) => void;
   onConnectionChange?: (connected: boolean) => void;
 };
@@ -55,8 +58,11 @@ export class NetworkClient {
       }
 
       switch (packet.type) {
-        case PacketStateUpdate:
-          this.handlers.onStateUpdate?.(packet.payload as StateUpdate);
+        case PacketStateSnapshot:
+          this.handlers.onStateSnapshot?.(packet.payload as StateSnapshot);
+          break;
+        case PacketStateDelta:
+          this.handlers.onStateDelta?.(packet.payload as StateDelta);
           break;
         case PacketWelcome:
           this.handlers.onWelcome?.(packet.payload as Welcome);

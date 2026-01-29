@@ -4,7 +4,8 @@ import "encoding/json"
 
 const (
 	PacketMoveIntent  = "MOVE_INTENT"
-	PacketStateUpdate = "STATE_UPDATE"
+	PacketStateSnapshot = "STATE_SNAPSHOT"
+	PacketStateDelta    = "STATE_DELTA"
 	PacketWelcome     = "WELCOME"
 )
 
@@ -27,6 +28,17 @@ type PlayerState struct {
 type StateUpdate struct {
 	Tick    int64         `json:"tick"`
 	Players []PlayerState `json:"players"`
+}
+
+type StateSnapshot struct {
+	Tick    int64         `json:"tick"`
+	Players []PlayerState `json:"players"`
+}
+
+type StateDelta struct {
+	Tick    int64         `json:"tick"`
+	Players []PlayerState `json:"players"`
+	Removed []string      `json:"removed"`
 }
 
 type Welcome struct {

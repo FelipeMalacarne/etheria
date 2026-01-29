@@ -3,6 +3,8 @@ import { NetworkClient } from "@/game-engine/network/client";
 import {
   PlayerState,
   POSITION_SCALE,
+  StateDelta,
+  StateSnapshot,
   Welcome,
 } from "@/game-engine/network/packets";
 import { gameStoreApi } from "@/store/gameStore";
@@ -103,18 +105,17 @@ export class MainScene extends Scene {
         if (!connected) {
           gameStoreApi.getState().setPlayerId(null);
           this.localPlayerId = null;
-          this.isFollowing = false;
-          this.localPath = [];
-          this.localPathIndex = 0;
-          this.localPredicted = null;
-          this.localServerPos = null;
+          this.resetLocalState();
         }
       },
       onWelcome: (welcome) => {
         this.handleWelcome(welcome);
       },
-      onStateUpdate: (state) => {
-        this.syncPlayers(state.players);
+      onStateSnapshot: (snapshot) => {
+        this.applySnapshot(snapshot);
+      },
+      onStateDelta: (delta) => {
+        this.applyDelta(delta);
       },
     });
 
@@ -136,11 +137,12 @@ export class MainScene extends Scene {
     this.followPlayerIfReady();
   }
 
-  private syncPlayers(players: PlayerState[]) {
+  private applySnapshot(snapshot: StateSnapshot) {
     if (this.isShuttingDown || !this.sys.isActive()) {
       return;
     }
 
+    const players = snapshot.players;
     const seen = new Set(players.map((player) => player.id));
 
     for (const [id, sprite] of this.playerSprites) {
@@ -149,43 +151,38 @@ export class MainScene extends Scene {
         this.playerSprites.delete(id);
         this.playerTargets.delete(id);
         if (id === this.localPlayerId) {
-          this.isFollowing = false;
-          this.localPredicted = null;
-          this.localServerPos = null;
-          this.localPath = [];
-          this.localPathIndex = 0;
+          this.resetLocalState();
         }
       }
     }
 
     for (const player of players) {
-      const isLocal = player.id === this.localPlayerId;
-      let sprite = this.playerSprites.get(player.id);
-      const worldX = this.fromNetworkPosition(player.x);
-      const worldY = this.fromNetworkPosition(player.y);
-      this.playerTargets.set(player.id, { x: worldX, y: worldY });
-      if (isLocal) {
-        this.localServerPos = { x: worldX, y: worldY };
-        if (!this.localPredicted) {
-          this.localPredicted = { x: worldX, y: worldY };
-        }
+      this.upsertPlayer(player);
+    }
+
+    this.followPlayerIfReady();
+  }
+
+  private applyDelta(delta: StateDelta) {
+    if (this.isShuttingDown || !this.sys.isActive()) {
+      return;
+    }
+
+    for (const id of delta.removed) {
+      const sprite = this.playerSprites.get(id);
+      if (sprite) {
+        sprite.destroy();
+        this.playerSprites.delete(id);
+        this.playerTargets.delete(id);
       }
 
-      if (!sprite) {
-        sprite = this.add.rectangle(
-          worldX,
-          worldY,
-          this.playerSize,
-          this.playerSize,
-          isLocal ? 0xff6b6b : 0x4d96ff,
-        );
-        this.playerSprites.set(player.id, sprite);
-        if (isLocal && this.localPredicted) {
-          sprite.setPosition(this.localPredicted.x, this.localPredicted.y);
-        }
-      } else if (isLocal) {
-        sprite.setFillStyle(0xff6b6b);
+      if (id === this.localPlayerId) {
+        this.resetLocalState();
       }
+    }
+
+    for (const player of delta.players) {
+      this.upsertPlayer(player);
     }
 
     this.followPlayerIfReady();
@@ -365,6 +362,45 @@ export class MainScene extends Scene {
     const correction = 1 - Math.exp(-this.correctionRate * deltaSeconds);
     this.localPredicted.x += dx * correction;
     this.localPredicted.y += dy * correction;
+  }
+
+  private upsertPlayer(player: PlayerState) {
+    const isLocal = player.id === this.localPlayerId;
+    let sprite = this.playerSprites.get(player.id);
+    const worldX = this.fromNetworkPosition(player.x);
+    const worldY = this.fromNetworkPosition(player.y);
+
+    this.playerTargets.set(player.id, { x: worldX, y: worldY });
+    if (isLocal) {
+      this.localServerPos = { x: worldX, y: worldY };
+      if (!this.localPredicted) {
+        this.localPredicted = { x: worldX, y: worldY };
+      }
+    }
+
+    if (!sprite) {
+      sprite = this.add.rectangle(
+        worldX,
+        worldY,
+        this.playerSize,
+        this.playerSize,
+        isLocal ? 0xff6b6b : 0x4d96ff,
+      );
+      this.playerSprites.set(player.id, sprite);
+      if (isLocal && this.localPredicted) {
+        sprite.setPosition(this.localPredicted.x, this.localPredicted.y);
+      }
+    } else if (isLocal) {
+      sprite.setFillStyle(0xff6b6b);
+    }
+  }
+
+  private resetLocalState() {
+    this.isFollowing = false;
+    this.localPredicted = null;
+    this.localServerPos = null;
+    this.localPath = [];
+    this.localPathIndex = 0;
   }
 
   private worldToGrid(x: number, y: number) {

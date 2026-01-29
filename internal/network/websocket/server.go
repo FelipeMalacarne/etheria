@@ -18,6 +18,8 @@ import (
 const (
 	writeTimeout = 5 * time.Second
 	sendBuffer   = 16
+	chunkSizeTiles      = 8
+	chunkRadius         = 1
 )
 
 var upgrader = websocket.Upgrader{
@@ -33,6 +35,7 @@ type Server struct {
 	clients map[*client]struct{}
 	nextID  uint64
 	mu      sync.RWMutex
+	lastTick int64
 }
 
 type client struct {
@@ -40,6 +43,8 @@ type client struct {
 	conn      *websocket.Conn
 	send      chan packets.Packet
 	closeOnce sync.Once
+	mu       sync.Mutex
+	lastSent map[string]packets.PlayerState
 }
 
 func (c *client) close() {
@@ -71,33 +76,17 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) BroadcastState(tick int64) {
-	players := s.world.SnapshotPlayers()
-	statePlayers := make([]packets.PlayerState, 0, len(players))
-	for _, player := range players {
-		statePlayers = append(statePlayers, packets.PlayerState{
-			ID: player.ID,
-			X:  player.X,
-			Y:  player.Y,
-		})
-	}
-
-	packet, err := packets.NewPacket(packets.PacketStateUpdate, packets.StateUpdate{
-		Tick:    tick,
-		Players: statePlayers,
-	})
-	if err != nil {
-		log.Printf("state update encode failed: %v", err)
-		return
-	}
+	atomic.StoreInt64(&s.lastTick, tick)
 
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
+	clients := make([]*client, 0, len(s.clients))
 	for client := range s.clients {
-		select {
-		case client.send <- packet:
-		default:
-		}
+		clients = append(clients, client)
+	}
+	s.mu.RUnlock()
+
+	for _, client := range clients {
+		s.sendDelta(client, tick)
 	}
 }
 
@@ -121,6 +110,7 @@ func (s *Server) newClient(conn *websocket.Conn) *client {
 		id:   strconv.FormatUint(id, 10),
 		conn: conn,
 		send: make(chan packets.Packet, sendBuffer),
+		lastSent: make(map[string]packets.PlayerState),
 	}
 }
 
@@ -131,6 +121,7 @@ func (s *Server) addClient(client *client) {
 
 	s.world.AddPlayer(client.id)
 	s.sendPacket(client, packets.PacketWelcome, packets.Welcome{ID: client.id})
+	s.sendSnapshot(client)
 }
 
 func (s *Server) removeClient(client *client) {
@@ -204,4 +195,81 @@ func (s *Server) sendPacket(client *client, packetType string, payload any) {
 	case client.send <- packet:
 	default:
 	}
+}
+
+func (s *Server) sendSnapshot(client *client) {
+	tick := atomic.LoadInt64(&s.lastTick)
+	players, ok := s.world.SnapshotPlayersInChunkRadius(client.id, chunkRadius, chunkSizeTiles)
+	if !ok {
+		return
+	}
+
+	statePlayers := make([]packets.PlayerState, 0, len(players))
+	nextSent := make(map[string]packets.PlayerState, len(players))
+
+	for _, player := range players {
+		state := packets.PlayerState{
+			ID: player.ID,
+			X:  player.X,
+			Y:  player.Y,
+		}
+		statePlayers = append(statePlayers, state)
+		nextSent[player.ID] = state
+	}
+
+	client.mu.Lock()
+	client.lastSent = nextSent
+	client.mu.Unlock()
+
+	s.sendPacket(client, packets.PacketStateSnapshot, packets.StateSnapshot{
+		Tick:    tick,
+		Players: statePlayers,
+	})
+}
+
+func (s *Server) sendDelta(client *client, tick int64) {
+	players, ok := s.world.SnapshotPlayersInChunkRadius(client.id, chunkRadius, chunkSizeTiles)
+	if !ok {
+		return
+	}
+
+	statePlayers := make([]packets.PlayerState, 0, len(players))
+	nextSent := make(map[string]packets.PlayerState, len(players))
+
+	client.mu.Lock()
+	prevSent := client.lastSent
+	for _, player := range players {
+		state := packets.PlayerState{
+			ID: player.ID,
+			X:  player.X,
+			Y:  player.Y,
+		}
+		nextSent[player.ID] = state
+
+		prev, ok := prevSent[player.ID]
+		if !ok || prev.X != state.X || prev.Y != state.Y {
+			statePlayers = append(statePlayers, state)
+		}
+	}
+
+	removed := make([]string, 0)
+	for id := range prevSent {
+		if _, ok := nextSent[id]; !ok {
+			removed = append(removed, id)
+		}
+	}
+
+	if len(statePlayers) == 0 && len(removed) == 0 {
+		client.mu.Unlock()
+		return
+	}
+
+	client.lastSent = nextSent
+	client.mu.Unlock()
+
+	s.sendPacket(client, packets.PacketStateDelta, packets.StateDelta{
+		Tick:    tick,
+		Players: statePlayers,
+		Removed: removed,
+	})
 }

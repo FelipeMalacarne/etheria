@@ -184,6 +184,39 @@ func (w *World) DrainDirty() bool {
 	return true
 }
 
+func (w *World) SnapshotPlayersInChunkRadius(id string, chunkRadius int, chunkSizeTiles int) ([]Player, bool) {
+	if chunkSizeTiles <= 0 {
+		chunkSizeTiles = 1
+	}
+	if chunkRadius < 0 {
+		chunkRadius = 0
+	}
+
+	w.mu.RLock()
+	player, ok := w.players[id]
+	if !ok {
+		w.mu.RUnlock()
+		return nil, false
+	}
+
+	centerTileX, centerTileY := w.toTileCoords(player.X, player.Y)
+	centerChunkX := centerTileX / chunkSizeTiles
+	centerChunkY := centerTileY / chunkSizeTiles
+
+	players := make([]Player, 0, len(w.players))
+	for _, other := range w.players {
+		tileX, tileY := w.toTileCoords(other.X, other.Y)
+		chunkX := tileX / chunkSizeTiles
+		chunkY := tileY / chunkSizeTiles
+		if absInt(chunkX-centerChunkX) <= chunkRadius && absInt(chunkY-centerChunkY) <= chunkRadius {
+			players = append(players, *other)
+		}
+	}
+	w.mu.RUnlock()
+
+	return players, true
+}
+
 const positionScale = 100
 const tileSize = 32
 const mapWidth = 50

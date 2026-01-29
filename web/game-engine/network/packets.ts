@@ -1,5 +1,6 @@
 export const PacketMoveIntent = "MOVE_INTENT";
-export const PacketStateUpdate = "STATE_UPDATE";
+export const PacketStateSnapshot = "STATE_SNAPSHOT";
+export const PacketStateDelta = "STATE_DELTA";
 export const PacketWelcome = "WELCOME";
 export const POSITION_SCALE = 100;
 
@@ -22,6 +23,17 @@ export type PlayerState = {
 export type StateUpdate = {
   tick: number;
   players: PlayerState[];
+};
+
+export type StateSnapshot = {
+  tick: number;
+  players: PlayerState[];
+};
+
+export type StateDelta = {
+  tick: number;
+  players: PlayerState[];
+  removed: string[];
 };
 
 export type Welcome = {
