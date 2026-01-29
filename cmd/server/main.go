@@ -27,7 +27,8 @@ func main() {
 
 	world := engine.NewWorld()
 	server := websocket.NewServer(world)
-	loop := engine.NewLoop(tickRate, func(tick int64) {
+	loop := engine.NewLoop(tickRate, func(tick int64, delta time.Duration) {
+		world.Step(delta.Seconds())
 		server.BroadcastState(tick)
 	})
 

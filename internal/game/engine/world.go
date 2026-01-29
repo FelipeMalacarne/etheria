@@ -1,11 +1,17 @@
 package engine
 
-import "sync"
+import (
+	"math"
+	"sync"
+)
 
 type Player struct {
-	ID string
-	X  int
-	Y  int
+	ID        string
+	X         int
+	Y         int
+	TargetX   int
+	TargetY   int
+	HasTarget bool
 }
 
 type World struct {
@@ -23,10 +29,16 @@ func (w *World) AddPlayer(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	spawnX := 800 * positionScale
+	spawnY := 800 * positionScale
+
 	w.players[id] = &Player{
-		ID: id,
-		X:  0,
-		Y:  0,
+		ID:        id,
+		X:         spawnX,
+		Y:         spawnY,
+		TargetX:   spawnX,
+		TargetY:   spawnY,
+		HasTarget: false,
 	}
 }
 
@@ -37,7 +49,7 @@ func (w *World) RemovePlayer(id string) {
 	delete(w.players, id)
 }
 
-func (w *World) SetPlayerPosition(id string, x, y int) {
+func (w *World) SetPlayerTarget(id string, x, y int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -46,8 +58,9 @@ func (w *World) SetPlayerPosition(id string, x, y int) {
 		return
 	}
 
-	player.X = x
-	player.Y = y
+	player.TargetX = x
+	player.TargetY = y
+	player.HasTarget = true
 }
 
 func (w *World) SnapshotPlayers() []Player {
@@ -61,3 +74,43 @@ func (w *World) SnapshotPlayers() []Player {
 
 	return players
 }
+
+func (w *World) Step(deltaSeconds float64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if deltaSeconds <= 0 {
+		return
+	}
+
+	const speed = 140.0
+	const speedScaled = speed * positionScale
+
+	for _, player := range w.players {
+		if !player.HasTarget {
+			continue
+		}
+
+		dx := float64(player.TargetX - player.X)
+		dy := float64(player.TargetY - player.Y)
+		distance := math.Hypot(dx, dy)
+		if distance == 0 {
+			player.HasTarget = false
+			continue
+		}
+
+		step := speedScaled * deltaSeconds
+		if distance <= step {
+			player.X = player.TargetX
+			player.Y = player.TargetY
+			player.HasTarget = false
+			continue
+		}
+
+		ratio := step / distance
+		player.X += int(math.Round(dx * ratio))
+		player.Y += int(math.Round(dy * ratio))
+	}
+}
+
+const positionScale = 100

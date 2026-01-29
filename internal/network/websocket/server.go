@@ -186,7 +186,7 @@ func (s *Server) handlePacket(client *client, packet packets.Packet) {
 			log.Printf("invalid move intent (%s): %v", client.id, err)
 			return
 		}
-		s.world.SetPlayerPosition(client.id, intent.X, intent.Y)
+		s.world.SetPlayerTarget(client.id, intent.X, intent.Y)
 	default:
 	}
 }

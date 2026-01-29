@@ -1,6 +1,10 @@
 import { Scene } from "phaser";
 import { NetworkClient } from "@/game-engine/network/client";
-import { PlayerState, Welcome } from "@/game-engine/network/packets";
+import {
+  PlayerState,
+  POSITION_SCALE,
+  Welcome,
+} from "@/game-engine/network/packets";
 import { gameStoreApi } from "@/store/gameStore";
 
 export class MainScene extends Scene {
@@ -47,8 +51,8 @@ export class MainScene extends Scene {
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
       this.network?.sendMoveIntent(
-        Math.round(worldPoint.x),
-        Math.round(worldPoint.y),
+        this.toNetworkPosition(worldPoint.x),
+        this.toNetworkPosition(worldPoint.y),
       );
     });
 
@@ -118,18 +122,20 @@ export class MainScene extends Scene {
     for (const player of players) {
       const isLocal = player.id === this.localPlayerId;
       let sprite = this.playerSprites.get(player.id);
+      const worldX = this.fromNetworkPosition(player.x);
+      const worldY = this.fromNetworkPosition(player.y);
 
       if (!sprite) {
         sprite = this.add.rectangle(
-          player.x,
-          player.y,
+          worldX,
+          worldY,
           this.playerSize,
           this.playerSize,
           isLocal ? 0xff6b6b : 0x4d96ff,
         );
         this.playerSprites.set(player.id, sprite);
       } else {
-        sprite.setPosition(player.x, player.y);
+        sprite.setPosition(worldX, worldY);
         if (isLocal) {
           sprite.setFillStyle(0xff6b6b);
         }
@@ -166,6 +172,14 @@ export class MainScene extends Scene {
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     return `${protocol}://${window.location.hostname}:8080/ws`;
+  }
+
+  private toNetworkPosition(value: number) {
+    return Math.round(value * POSITION_SCALE);
+  }
+
+  private fromNetworkPosition(value: number) {
+    return value / POSITION_SCALE;
   }
 
   private ensureTilesetTexture(key: string, tileSize: number) {

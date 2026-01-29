@@ -7,10 +7,10 @@ import (
 
 type Loop struct {
 	tickRate time.Duration
-	onTick   func(tick int64)
+	onTick   func(tick int64, delta time.Duration)
 }
 
-func NewLoop(tickRate time.Duration, onTick func(tick int64)) *Loop {
+func NewLoop(tickRate time.Duration, onTick func(tick int64, delta time.Duration)) *Loop {
 	return &Loop{
 		tickRate: tickRate,
 		onTick:   onTick,
@@ -34,7 +34,7 @@ func (l *Loop) Start(ctx context.Context) {
 		case <-ticker.C:
 			tick += 1
 			if l.onTick != nil {
-				l.onTick(tick)
+				l.onTick(tick, l.tickRate)
 			}
 		}
 	}

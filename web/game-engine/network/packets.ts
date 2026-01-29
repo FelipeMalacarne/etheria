@@ -1,6 +1,7 @@
 export const PacketMoveIntent = "MOVE_INTENT";
 export const PacketStateUpdate = "STATE_UPDATE";
 export const PacketWelcome = "WELCOME";
+export const POSITION_SCALE = 100;
 
 export type Packet<T = unknown> = {
   type: string;
