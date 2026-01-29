@@ -20,11 +20,6 @@ export type PlayerState = {
   y: number;
 };
 
-export type StateUpdate = {
-  tick: number;
-  players: PlayerState[];
-};
-
 export type StateSnapshot = {
   tick: number;
   players: PlayerState[];

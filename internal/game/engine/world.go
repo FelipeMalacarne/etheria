@@ -121,7 +121,7 @@ func (w *World) Step(deltaSeconds float64) {
 	}
 
 	const speed = 140.0
-	const speedScaled = speed * positionScale
+	const speedScaled = speed * PositionScale
 
 	for _, player := range w.players {
 		if player.PathIndex >= len(player.Path) {
@@ -217,11 +217,11 @@ func (w *World) SnapshotPlayersInChunkRadius(id string, chunkRadius int, chunkSi
 	return players, true
 }
 
-const positionScale = 100
+const PositionScale = 100
 const tileSize = 32
 const mapWidth = 50
 const mapHeight = 50
-const tileWorldSize = tileSize * positionScale
+const tileWorldSize = tileSize * PositionScale
 
 type tilePoint struct {
 	X int

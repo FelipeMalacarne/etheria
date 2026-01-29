@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"os"
@@ -36,6 +37,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", server.HandleWS)
+	mux.HandleFunc("/players", handlePlayers(world))
 
 	httpServer := &http.Server{
 		Addr:              addr,
@@ -93,4 +95,41 @@ func getenvInt(key string, fallback int) int {
 	}
 
 	return parsed
+}
+
+type playerInfo struct {
+	ID string  `json:"id"`
+	X  float64 `json:"x"`
+	Y  float64 `json:"y"`
+}
+
+type playerList struct {
+	Players []playerInfo `json:"players"`
+}
+
+func handlePlayers(world *engine.World) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Cache-Control", "no-store")
+
+		players := world.SnapshotPlayers()
+		response := playerList{Players: make([]playerInfo, 0, len(players))}
+		for _, player := range players {
+			response.Players = append(response.Players, playerInfo{
+				ID: player.ID,
+				X:  float64(player.X) / engine.PositionScale,
+				Y:  float64(player.Y) / engine.PositionScale,
+			})
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
+			http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		}
+	}
 }

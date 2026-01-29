@@ -25,11 +25,6 @@ type PlayerState struct {
 	Y  int `json:"y"`
 }
 
-type StateUpdate struct {
-	Tick    int64         `json:"tick"`
-	Players []PlayerState `json:"players"`
-}
-
 type StateSnapshot struct {
 	Tick    int64         `json:"tick"`
 	Players []PlayerState `json:"players"`

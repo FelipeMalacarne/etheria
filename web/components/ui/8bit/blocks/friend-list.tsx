@@ -67,7 +67,7 @@ const playerCardVariants = cva(
 );
 
 export interface FriendListPlayer {
-  id: number;
+  id: string;
   name: string;
   status: "online" | "ingame" | "away" | "offline";
   avatar?: string;
@@ -108,82 +108,84 @@ export default function FriendList({
         <CardContent className="space-y-5 px-1  min-w-[150px]">
           <ScrollArea className="h-[400px]">
             <div className="space-y-2 mx-8">
-              {players.map((player) => (
-                <div
-                  key={player.id}
-                  className="relative rounded-none border-y-4 border-foreground dark:border-ring"
-                >
+              {players.length === 0 ? (
+                <div className="text-muted-foreground text-xs text-center py-6">
+                  No players online.
+                </div>
+              ) : (
+                players.map((player) => (
                   <div
-                    className="absolute inset-0 border-x-6 -mx-1.5 border-foreground dark:border-ring pointer-events-none"
-                    aria-hidden="true"
-                  />
-                  <div
-                    className={cn(playerCardVariants({ status: "default" }))}
+                    key={player.id}
+                    className="relative rounded-none border-y-4 border-foreground dark:border-ring"
                   >
-                    <div className="flex items-center gap-3">
-                      <Avatar
-                        variant="pixel"
-                        font="retro"
-                        className="size-6 md:size-10"
-                      >
-                        <AvatarImage src={player.avatar} alt={player.name} />
-                        <AvatarFallback className="retro text-[5px] md:text-sm">
-                          {player.avatarFallback ||
-                            player.name?.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-4">
-                          <span className="font-medium truncate retro text-xs hidden sm:inline">
-                            {truncate(player.name, 20)}
-                          </span>
-                          <span className="font-medium truncate retro sm:hidden text-xs md:text-sm">
-                            {truncate(player.name, 12)}
-                          </span>
-                        </div>
-                        {/* Status and Activity Line */}
-                        <div className="flex items-center text-xs">
-                          {/* Status Indicator Dot */}
-                         <div
-                            className={cn(
-                              "w-2 h-2 mr-1 mt-[2px]",
-                              statusVariants({ status: player.status })
-                            )}
-                            aria-label={`Status: ${player.status}`}
-                          ></div>
-
-                          {/* Status Text (e.g., ONLINE) */}
-                          {showstatus && (
-                            <span
-                              className={cn(
-                                `uppercase font-retro mr-1 mt-1 text-[9px] `
-                              )}
-                            >
-                              {player.status?.toUpperCase()}
+                    <div
+                      className="absolute inset-0 border-x-6 -mx-1.5 border-foreground dark:border-ring pointer-events-none"
+                      aria-hidden="true"
+                    />
+                    <div
+                      className={cn(playerCardVariants({ status: "default" }))}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Avatar
+                          variant="pixel"
+                          font="retro"
+                          className="size-6 md:size-10"
+                        >
+                          <AvatarImage src={player.avatar} alt={player.name} />
+                          <AvatarFallback className="retro text-[5px] md:text-sm">
+                            {player.avatarFallback ||
+                              player.name?.charAt(0).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-4">
+                            <span className="font-medium truncate retro text-xs hidden sm:inline">
+                              {truncate(player.name, 20)}
                             </span>
-                          )}
+                            <span className="font-medium truncate retro sm:hidden text-xs md:text-sm">
+                              {truncate(player.name, 12)}
+                            </span>
+                          </div>
+                          {/* Status and Activity Line */}
+                          <div className="flex items-center text-xs">
+                            {/* Status Indicator Dot */}
+                            <div
+                              className={cn(
+                                "w-2 h-2 mr-1 mt-[2px]",
+                                statusVariants({ status: player.status })
+                              )}
+                              aria-label={`Status: ${player.status}`}
+                            ></div>
 
-                          {/* Activity Text (Optional) */}
-                          {player.activity && showactivity && (
-                            <>
+                            {/* Status Text (e.g., ONLINE) */}
+                            {showstatus && (
                               <span
-                                className={`text-muted-foreground italic mt-1 text-[9px] md:hidden `}
+                                className={cn(
+                                  "uppercase font-retro mr-1 mt-1 text-[9px]"
+                                )}
                               >
-                                {truncate(player.activity, 20)}
+                                {player.status?.toUpperCase()}
                               </span>
-                              <span
-                                className={`text-muted-foreground italic mt-1 text-[9px] hidden md:inline `}
-                              >
-                                {truncate(player.activity, 30)}
-                              </span>
-                            </>
-                          )}
+                            )}
+
+                            {/* Activity Text (Optional) */}
+                            {player.activity && showactivity && (
+                              <>
+                                <span className="text-muted-foreground italic mt-1 text-[9px] md:hidden">
+                                  {truncate(player.activity, 20)}
+                                </span>
+                                <span className="text-muted-foreground italic mt-1 text-[9px] hidden md:inline">
+                                  {truncate(player.activity, 30)}
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </ScrollArea>
         </CardContent>
